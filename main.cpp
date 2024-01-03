@@ -186,6 +186,14 @@ void printscreen(winsize w, const Snake snake, const std::vector<Apple> apples, 
     }
 }
 
+void clearScreen() {
+#ifdef __linux__
+    system("clear");
+#elif __WIN32
+    system("cls");
+#endif
+}
+
 char last_input;
 bool isrunning = true;
 
@@ -228,7 +236,7 @@ int main(int argc, char *argv[]) {
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);  // get the current terminal size
 
     std::cout.flush();
-    system("clear");
+    clearScreen();
     std::cout.flush();
     auto INIT_SCREEN = [w, isVimMode](){
         for (int i = 0; i < w.ws_row/4; ++i) {
@@ -335,7 +343,7 @@ int main(int argc, char *argv[]) {
     getchar();
 
     std::cout.flush();
-    system("clear");
+    clearScreen();
     std::cout.flush();
 
     std::vector<Apple> apples;
@@ -377,7 +385,7 @@ int main(int argc, char *argv[]) {
                 snake.d = curD;
         }
         std::cout.flush();
-        system("clear");
+        clearScreen();
         std::cout.flush();
         res = snake.move(w, apples, bombs);
         printscreen(w, snake, apples, bombs);
@@ -385,7 +393,7 @@ int main(int argc, char *argv[]) {
         
         if (!res) {
             std::cout.flush();
-            system("clear");
+            clearScreen();
             std::cout.flush();
 
             isrunning = false;
