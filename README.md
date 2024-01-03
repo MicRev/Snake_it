@@ -9,9 +9,13 @@ A command line Snake game.
   - ncurses
   - cmdline (pure headfile ,already included in this repo)
 - build and run with git and gcc
+
 `mkdir snake && cd snake`
+
 `git clone https://github.com/MicRev/Snake_it`
+
 `g++ -pthread -lncurses ./main.cpp -o ./main`
+
 `./main`
 
 ### Supporting platform
