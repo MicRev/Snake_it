@@ -7,6 +7,8 @@
 #include <chrono>
 #include <termios.h>
 
+#include <curses.h>
+
 
 Pos::Pos() {
     x = -1;
@@ -34,53 +36,20 @@ Eatable::Eatable(int init_x, int init_y)
 }
 
 
-Apple::Apple(winsize w, Snake & snake, std::vector<Apple> & apples, std::vector<Bomb> & bombs)
-    :Eatable() {
-    do {
-        int x = random() % w.ws_col;
-        int y = random() % w.ws_row;
-
-        if (y == w.ws_row-1) {
-            continue;
-        }
-
-        for (Pos p : snake.track) {
-            if (x == p.x && y == p.y) {
-                continue;
-            }
-        }
-
-        if (!apples.empty()) {
-            for (Apple a : apples) {
-                if (x == a.pos.x && y == a.pos.y) {
-                    continue;
-                }
-            }
-        }
-
-        if (!bombs.empty()) {
-            for (Bomb b: bombs) {
-                if (x == b.pos.x && y == b.pos.y) {
-                    continue;
-                }
-            }
-        }
-
-        pos.x = x;
-        pos.y = y;
-        break;
-    } while(1);
+Apple::Apple(Pos pos)
+    :Eatable(pos.x, pos.y) {
+    ;
 }
 
-Snake::Snake(winsize w, int size = 3) {
+Snake::Snake(int size = 3) {
 
-    if (w.ws_col <= 15 || w.ws_row <= 11) {
+    if (COLS / 2 <= 15 || LINES <= 11) {
         throw "Too small terminal window QAQ";
     }
 
     len = size;
     d = left;
-    head = Pos(w.ws_col / 2, w.ws_row / 2);
+    head = Pos(COLS / 4, LINES / 2);
 
     for (int i = len-1; i >=0; --i) {
         track.emplace_back(head.x+i, head.y);
@@ -103,10 +72,10 @@ Pos Snake::nextpos() {
     }
 }
 
-bool Snake::move(winsize w, std::vector<Apple> & apples, std::vector<Bomb> & bombs)  {
+bool Snake::move(std::vector<Apple> & apples, std::vector<Bomb> & bombs)  {
     Pos nexthead = nextpos();
     if (nexthead.x < 0 || nexthead.y < 0 ||
-        nexthead.x >= w.ws_col || nexthead.y >= w.ws_row) {
+        nexthead.x >= COLS/2 || nexthead.y >= LINES) {
             return false;
     }
 
@@ -127,7 +96,12 @@ bool Snake::move(winsize w, std::vector<Apple> & apples, std::vector<Bomb> & bom
             head = nexthead;
             len++;
             apples.erase(a);
-            apples.emplace_back(w, *this, apples, bombs);
+
+            int newApples = 2;
+            
+            Pos newPos = newFreePos(apples, bombs);
+            apples.emplace_back(newPos);
+            
             track.push_back(head);
             return true;
         }
@@ -139,51 +113,73 @@ bool Snake::move(winsize w, std::vector<Apple> & apples, std::vector<Bomb> & bom
     return true;
 }
 
+Pos Snake::newFreePos(std::vector<Apple> & apples, std::vector<Bomb> & bombs) {
+    Pos newPos;
 
-void printscreen(winsize w, const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
-    
-    for (int y = 0; y < w.ws_row; ++y) {
-        for (int x = 0; x < w.ws_col; ++x) {
+    do{
+        int x = random() % (COLS/2);
+        int y = random() % LINES;
 
-            bool isSpecialBlock = false;
-
-            for (Pos p : snake.track) {
-                if (x == p.x && y == p.y) {
-                    if (p == snake.head) {
-                        switch (snake.d) {
-                            case up:    putchar('^'); break;
-                            case down:  putchar('v'); break;
-                            case left:  putchar('<'); break;
-                            case right: putchar('>'); break;
-                        }
-                    } else {
-                        putchar('*');
-                    }
-                    isSpecialBlock = true;
-                    continue;
-                }
-            }
-
-            for (auto a : apples) {
-                if (x == a.pos.x && y == a.pos.y) {
-                    isSpecialBlock = true;
-                    putchar('@');
-                    continue;
-                }
-            }
-
-            for (auto b: bombs) {
-                if (x == b.pos.x && y == b.pos.y) {
-                    isSpecialBlock = true;
-                    putchar('X');
-                    continue;
-                }
-            }
-            if (!isSpecialBlock) {
-                putchar(' ');
+        for (Pos p : track) {
+            if (x == p.x && y == p.y) {
+                continue;
             }
         }
+
+        if (!apples.empty()) {
+            for (Apple a : apples) {
+                if (x == a.pos.x && y == a.pos.y) {
+                    continue;
+                }
+            }
+        }
+
+        if (!bombs.empty()) {
+            for (Bomb b: bombs) {
+                if (x == b.pos.x && y == b.pos.y) {
+                    continue;
+                }
+            }
+        }
+
+        newPos.x = x;
+        newPos.y = y;
+
+        break;
+    } while(1);
+
+    return newPos;
+}
+
+
+void printscreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
+    
+    clear();
+
+    for (Pos p: snake.track) {
+        if (p == snake.head) {
+            switch (snake.d) {
+                case up:    mvprintw(p.y, p.x*2, "^"); break;
+                case down:  mvprintw(p.y, p.x*2, "v"); break;
+                case left:  mvprintw(p.y, p.x*2, "<"); break;
+                case right: mvprintw(p.y, p.x*2, ">"); break;
+            }
+        } else {
+            mvprintw(p.y, p.x*2, "*");
+        }
     }
+
+    for (Apple a : apples) {
+        Pos p = a.pos;
+        mvprintw(p.y, p.x*2, "@");
+    }
+
+    for (Bomb b : bombs) {
+        Pos p = b.pos;
+        mvprintw(p.y, p.x*2, "X");
+    }
+
+    refresh();
 }
 
 void clearScreen() {
@@ -199,17 +195,10 @@ bool isrunning = true;
 
 void threadGetChar() {
     while(isrunning) {
-        termios oldattr;
-        tcgetattr(0, &oldattr);
-
-        termios newattr = oldattr;
-        newattr.c_lflag &= ~(ICANON | ECHO);
-        tcsetattr(0, TCSANOW, &newattr);
 
         char buffer = 0;
-        buffer = getchar();  
-        tcsetattr(0, TCSANOW, &oldattr);
-        
+        buffer = getch(); 
+
         if (buffer != 0 && buffer != EOF) {
             last_input = buffer;
         }
@@ -219,6 +208,15 @@ void threadGetChar() {
 }
 
 int main(int argc, char *argv[]) {
+
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    srand(local_time->tm_year * 365 * 24 * 60 * 60 +
+          local_time->tm_yday * 24 * 60 * 60 +
+          local_time->tm_hour * 60 * 60 +
+          local_time->tm_min * 60 +
+          local_time->tm_sec);
 
     cmdline::parser parser;
     parser.add<int>("length", 'l', "length of the snake", false, 3, cmdline::range(3, 10));
@@ -232,130 +230,53 @@ int main(int argc, char *argv[]) {
     int interval = 1000 / parser.get<int>("speed");
     bool isVimMode = parser.exist("vim");
 
+    // winsize w;
+    // ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);  // get the current terminal size
+
     winsize w;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);  // get the current terminal size
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
 
-    std::cout.flush();
-    clearScreen();
-    std::cout.flush();
-    auto INIT_SCREEN = [w, isVimMode](){
-        for (int i = 0; i < w.ws_row/4; ++i) {
-            for (int j = 0; j < w.ws_col; ++j) {
-                putchar(' ');
-            }
-        }
+    LINES = w.ws_row;
+    COLS  = w.ws_col;
+    
+    initscr();
+    noecho();  // do not show input chars
 
-        for (int j = 0; j < (w.ws_col-8)/2; ++j) {
-            putchar(' ');
-        }
+    clear();
+    refresh();
 
-        printf("SNAKE IT");
+    mvprintw(LINES/2-4, (COLS-8)/2, "SNAKE IT");
 
-        for (int j = 0; j < w.ws_col - (w.ws_col-8)/2 - 8; ++j) {
-            putchar(' ');
-        }
+    if (isVimMode) {
+        mvprintw(LINES/2-2, (COLS-12)/2, "HJKL TO MOVE");
+    } else {
+        mvprintw(LINES/2-2, (COLS-12)/2, "WASD TO MOVE");
+    }
 
-        for (int j = 0; j < w.ws_col; ++j) {
-            putchar(' ');
-        }
+    mvprintw(LINES/2, (COLS-7)/2, "@ APPLE"); 
+    mvprintw(LINES/2+1, (COLS-7)/2, "X  BOMB");
+    mvprintw(LINES/2+2, (COLS-9)/2, "<**** YOU"); 
 
-        if (isVimMode) {
+    mvprintw(LINES/2+4, (COLS-11)/2, "PRESS ENTER");
 
-            for (int j = 0; j < (w.ws_col-12)/2; ++j) {
-                putchar(' ');
-            }
-            
-            printf("HJKLto move");
+    refresh(); 
 
-            for (int j = 0; j < w.ws_col - (w.ws_col-12)/2 - 12; ++j) {
-                putchar(' ');
-            }
+    getch();
+    cbreak();  // read chars immediately
 
-            for (int j = 0; j < w.ws_col; ++j) {
-                putchar(' ');
-            }
-
-        } else {
-
-            for (int j = 0; j < (w.ws_col-12)/2; ++j) {
-                putchar(' ');
-            }
-            
-            printf("WASD to move");
-
-            for (int j = 0; j < w.ws_col - (w.ws_col-12)/2 - 12; ++j) {
-                putchar(' ');
-            }
-
-            for (int j = 0; j < w.ws_col; ++j) {
-                putchar(' ');
-            }
-
-        }
-
-        for (int j = 0; j < (w.ws_col-7)/2; ++j) {
-            putchar(' ');
-        }
-
-        printf("@ APPLE");
-
-        for (int j = 0; j < w.ws_col - (w.ws_col-7)/2 - 7; ++j) {
-            putchar(' ');
-        }
-
-        for (int j = 0; j < (w.ws_col-7)/2; ++j) {
-            putchar(' ');
-        }
-
-        printf("X  BOMB");
-
-        for (int j = 0; j < w.ws_col - (w.ws_col-7)/2 - 7; ++j) {
-            putchar(' ');
-        }
-
-        for (int j = 0; j < (w.ws_col-9)/2; ++j) {
-            putchar(' ');
-        }
-
-        printf("<**** YOU");
-
-        for (int j = 0; j < w.ws_col - (w.ws_col-9)/2 - 9; ++j) {
-            putchar(' ');
-        }
-
-        for (int j = 0; j < w.ws_col; ++j) {
-            putchar(' ');
-        }
-
-        printf("PRESS ENTER");
-
-        for (int j = 0; j < w.ws_col-11; ++j) {
-            putchar(' ');
-        }
-
-        for (int i = 0; i < w.ws_row - w.ws_row/4 - 9; ++i) {
-            for (int j = 0; j < w.ws_col; ++j) {
-                putchar(' ');
-            }
-        }
-    };
-    INIT_SCREEN();
-    getchar();
-
-    std::cout.flush();
-    clearScreen();
-    std::cout.flush();
+    clear();
+    refresh();
 
     std::vector<Apple> apples;
     std::vector<Bomb> bombs;
-    Snake snake(w, parser.get<int>("length"));
+    Snake snake(parser.get<int>("length"));
     
-    apples.emplace_back(w, snake, apples, bombs);
+    Pos newPos = snake.newFreePos(apples, bombs);
+    apples.emplace_back(newPos);
 
     bool res;
-    bool islocked;
     std::thread inputThread(threadGetChar);
-    printscreen(w, snake, apples, bombs);
+    printscreen(snake, apples, bombs);
 
     int round = 0;
     while (1) {
@@ -384,41 +305,20 @@ int main(int argc, char *argv[]) {
               (curD == right && snake.d == left))) {
                 snake.d = curD;
         }
-        std::cout.flush();
-        clearScreen();
-        std::cout.flush();
-        res = snake.move(w, apples, bombs);
-        printscreen(w, snake, apples, bombs);
+        res = snake.move(apples, bombs);
+        printscreen(snake, apples, bombs);
         round++;
         
         if (!res) {
-            std::cout.flush();
-            clearScreen();
-            std::cout.flush();
 
+            clear();
             isrunning = false;
-            for (int i = 0; i < w.ws_row/2; ++i) {
-                for (int j = 0; j < w.ws_col; ++j) {
-                    putchar(' ');
-                }
-            }
+            
+            mvprintw(LINES/2, (COLS-9)/2, "GAME OVER");
+            refresh();
 
-            for (int i = 0; i < (w.ws_col-9)/2; ++i) {
-                putchar(' ');
-            }
-
-            printf("GAME OVER!\n");
-
-            for (int i = 0; i < w.ws_col - (w.ws_col-9)/2 - 9; ++i) {
-                putchar(' ');
-            }
-
-            for (int i = 0; i < w.ws_row-w.ws_row/2-1; ++i) {
-                for (int j = 0; j < w.ws_col; ++j) {
-                    putchar(' ');
-                }
-            }
             inputThread.join();
+            endwin();
             break;
         }
     }

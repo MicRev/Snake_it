@@ -30,7 +30,7 @@ class Snake;
 class Apple : public Eatable {
 
     public:
-        Apple(winsize w, Snake & snake, std::vector<Apple> & apples, std::vector<Bomb> & bombs);
+        Apple(Pos pos);
 
 };
 
@@ -48,10 +48,12 @@ class Snake {
         Pos head;
         std::deque<Pos> track;
 
-        Snake(winsize w, int size);
+        Snake(int size);
 
         Pos nextpos();
 
-        bool move(winsize w, std::vector<Apple> & apples, std::vector<Bomb> & bombs);
+        bool move(std::vector<Apple> & apples, std::vector<Bomb> & bombs);
+
+        Pos newFreePos(std::vector<Apple> & apples, std::vector<Bomb> & bombs);
 
 };
