@@ -151,10 +151,14 @@ Pos Snake::newFreePos(std::vector<Apple> & apples, std::vector<Bomb> & bombs) {
     return newPos;
 }
 
+int init_len;
+int speed;
 
 void printscreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
     
     clear();
+
+    mvprintw(0, 0, "SCORE: %d", (snake.len - init_len) * speed);
 
     for (Pos p: snake.track) {
         if (p == snake.head) {
@@ -182,13 +186,6 @@ void printscreen(const Snake snake, const std::vector<Apple> apples, const std::
     refresh();
 }
 
-void clearScreen() {
-#ifdef __linux__
-    system("clear");
-#elif __WIN32
-    system("cls");
-#endif
-}
 
 char last_input;
 bool isrunning = true;
@@ -209,15 +206,6 @@ void threadGetChar() {
 
 int main(int argc, char *argv[]) {
 
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    std::tm* local_time = std::localtime(&now_time);
-    srand(local_time->tm_year * 365 * 24 * 60 * 60 +
-          local_time->tm_yday * 24 * 60 * 60 +
-          local_time->tm_hour * 60 * 60 +
-          local_time->tm_min * 60 +
-          local_time->tm_sec);
-
     cmdline::parser parser;
     parser.add<int>("length", 'l', "length of the snake", false, 3, cmdline::range(3, 10));
     parser.add<int>("speed", 's', "frame per second, the moving speed", false, 5, cmdline::range(2, 50));
@@ -227,7 +215,9 @@ int main(int argc, char *argv[]) {
 
     parser.parse_check(argc, argv);
 
-    int interval = 1000 / parser.get<int>("speed");
+    speed = parser.get<int>("speed");
+
+    int interval = 1000 / speed;
     bool isVimMode = parser.exist("vim");
 
     // winsize w;
@@ -238,6 +228,17 @@ int main(int argc, char *argv[]) {
 
     LINES = w.ws_row;
     COLS  = w.ws_col;
+
+Begin:
+
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    srand(local_time->tm_year * 365 * 24 * 60 * 60 +
+          local_time->tm_yday * 24 * 60 * 60 +
+          local_time->tm_hour * 60 * 60 +
+          local_time->tm_min * 60 +
+          local_time->tm_sec);
     
     initscr();
     noecho();  // do not show input chars
@@ -269,7 +270,10 @@ int main(int argc, char *argv[]) {
 
     std::vector<Apple> apples;
     std::vector<Bomb> bombs;
-    Snake snake(parser.get<int>("length"));
+
+    init_len = parser.get<int>("length");
+
+    Snake snake(init_len);
     
     Pos newPos = snake.newFreePos(apples, bombs);
     apples.emplace_back(newPos);
@@ -307,19 +311,40 @@ int main(int argc, char *argv[]) {
         }
         res = snake.move(apples, bombs);
         printscreen(snake, apples, bombs);
-        round++;
         
         if (!res) {
 
             clear();
             isrunning = false;
             
-            mvprintw(LINES/2, (COLS-9)/2, "GAME OVER");
+            mvprintw(LINES/2-2, (COLS-9)/2, "GAME OVER");
+            mvprintw(LINES/2-1, (COLS-5)/2, "SCORE");
+            mvprintw(LINES/2, (COLS)/2, "%d", (snake.len-init_len) * speed);
+            inputThread.join();
+
             refresh();
 
-            inputThread.join();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+            flushinp();  // clear the buffer
+            
+            mvprintw(LINES/2+1, (COLS-18)/2, "PRESS R TO RESTART");
+            mvprintw(LINES/2+2, (COLS-19)/2, "PRESS ENTER TO QUIT");
+
+            
+            refresh();
+
+            auto c = getch();
+            if (c == 'r') {
+                round = 0;
+                isrunning = true;
+                curD = left;
+                last_input = 'a';
+                goto Begin;
+            }
             endwin();
             break;
         }
+        round++;
     }
 }
