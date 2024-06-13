@@ -2,13 +2,21 @@
 #include "cmdline.h"
 
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <thread>
 #include <chrono>
-#include <termios.h>
 
 #include <curses.h>
 
+std::vector<Pos> allPos;
+bool debug_mode = false;
+int init_len;
+int speed;
+char last_input;
+bool isrunning = true;
+
+std::ofstream logfile;
 
 Pos::Pos() {
     x = -1;
@@ -72,90 +80,127 @@ Pos Snake::nextpos() {
     }
 }
 
-bool Snake::move(std::vector<Apple> & apples, std::vector<Bomb> & bombs)  {
+std::vector<Pos> Snake::getFreePos(const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
+    std::vector<Pos> freePos;
+    for (Pos p: allPos) {
+
+        bool isOccupied = false;
+        for (Pos _p: track) {
+            if (p == _p) {
+                isOccupied = true;
+                break;
+            }
+        }
+
+        if (!isOccupied) {
+            for (Apple a: apples) {
+                Pos _p = a.pos;
+                if (p == _p) {
+                    isOccupied = true;
+                    break;
+                }
+            }
+        }
+
+        if (!isOccupied) {
+            for (Bomb b: bombs) {
+                Pos _p = b.pos;
+                if (p == _p) {
+                    isOccupied = true;
+                }
+            }
+        }
+
+        if (!isOccupied) {
+            freePos.emplace_back(p);
+        }
+    }
+
+    return freePos;
+}
+
+bool Snake::move(std::vector<Apple> & apples, std::vector<Bomb> & bombs, Pos & tail)  {
+    
     Pos nexthead = nextpos();
     if (nexthead.x < 0 || nexthead.y < 0 ||
-        nexthead.x >= COLS/2 || nexthead.y >= LINES) {
+        nexthead.x >= COLS/2 || nexthead.y >= LINES) {  // Out of boundary
             return false;
     }
 
     for (auto p: track) {
-        if (nexthead.x == p.x && nexthead.y == p.y) {
+        if (nexthead.x == p.x && nexthead.y == p.y) {  // Crash into itself
             return false;
         }
     }
 
     for (auto b : bombs) {
-        if (nexthead.x == b.pos.x && nexthead.y == b.pos.y) {
+        if (nexthead.x == b.pos.x && nexthead.y == b.pos.y) {  // Crash into a bomb
             return false;
         }
     }
 
+    Pos newPos;
     for (auto a = apples.begin(); a != apples.end(); ++a) {
         if (nexthead.x == a->pos.x && nexthead.y == a->pos.y) {
             head = nexthead;
             len++;
-            apples.erase(a);
 
             int newApples = 2;
             
-            Pos newPos = newFreePos(apples, bombs);
-            apples.emplace_back(newPos);
+            newPos = newFreePos(apples, bombs);
             
             track.push_back(head);
+
+            apples.erase(a);
+            apples.emplace_back(newPos);
+            tail.x = -1; tail.y = -1;
             return true;
         }
     }
 
     head = nexthead;
+    tail = track.at(0);
     track.pop_front();
     track.push_back(head);
     return true;
 }
 
 Pos Snake::newFreePos(std::vector<Apple> & apples, std::vector<Bomb> & bombs) {
-    Pos newPos;
+    std::vector<Pos> freePos = getFreePos(apples, bombs);
+    Pos newPos = freePos[random() % freePos.size()];
 
-    do{
-        int x = random() % (COLS/2);
-        int y = random() % LINES;
+    if (debug_mode) {
 
-        for (Pos p : track) {
-            if (x == p.x && y == p.y) {
-                continue;
-            }
+        logfile << "Apple" << std::endl;
+        for (Apple a: apples) {
+            logfile << a.pos.x << "," << a.pos.y << " ";
         }
 
-        if (!apples.empty()) {
-            for (Apple a : apples) {
-                if (x == a.pos.x && y == a.pos.y) {
-                    continue;
-                }
-            }
+        logfile << "\nBomb" << std::endl;
+        for (Bomb b: bombs) {
+            logfile << b.pos.x << "," << b.pos.y << " ";
         }
 
-        if (!bombs.empty()) {
-            for (Bomb b: bombs) {
-                if (x == b.pos.x && y == b.pos.y) {
-                    continue;
-                }
-            }
+        logfile << "\nSnake" << std::endl;
+        for (Pos p: track) {
+            logfile << p.x << "," << p.y << " ";
         }
+        logfile << std::endl;
 
-        newPos.x = x;
-        newPos.y = y;
+        logfile << "Free" << std::endl;
+        for (Pos p: freePos) {
+            logfile << p.x << "," << p.y << " ";
+        }
+        logfile << std::endl;
 
-        break;
-    } while(1);
-
+        logfile << "selected" << std::endl;
+        logfile << newPos.x << "," << newPos.y << std::endl;
+    }
     return newPos;
 }
 
-int init_len;
-int speed;
+void initscreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
 
-void printscreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
-    
     clear();
 
     mvprintw(0, 0, "SCORE: %d", (snake.len - init_len) * speed);
@@ -186,9 +231,79 @@ void printscreen(const Snake snake, const std::vector<Apple> apples, const std::
     refresh();
 }
 
+void updatescreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs, const Pos tail) {
 
-char last_input;
-bool isrunning = true;
+    if (tail.x == -1 and tail.y == -1) {  // Apple eaten, tail not disappear
+        mvprintw(0, 0, "SCORE: %d", (snake.len - init_len) * speed);
+        for (auto a: apples) {
+            Pos p = a.pos;
+            mvaddch(p.y, 2*p.x, '@');
+        }
+
+        for (auto b: bombs) {
+            Pos p = b.pos;
+            mvaddch(p.y, 2*p.x, 'X');
+        }
+
+    } else {
+        mvaddch(tail.y, 2*tail.x, ' ');
+    }
+
+    Pos p = snake.head;
+    switch (snake.d) {
+            case up:    
+                mvaddch(p.y, p.x*2, '^'); 
+                mvaddch(p.y+1, p.x*2, '*');
+                break;
+            case down:  
+                mvaddch(p.y, p.x*2, 'v'); 
+                mvaddch(p.y-1, p.x*2, '*');
+                break;
+            case left:  
+                mvaddch(p.y, p.x*2, '<'); 
+                mvaddch(p.y, p.x*2+2, '*');
+                break;
+            case right: 
+                mvaddch(p.y, p.x*2, '>'); 
+                mvaddch(p.y, p.x*2-2, '*');
+                break;
+    }
+    
+    refresh();
+
+}
+
+void printscreen(const Snake snake, const std::vector<Apple> apples, const std::vector<Bomb> bombs) {
+    
+    // clear();
+
+    mvprintw(0, 0, "SCORE: %d", (snake.len - init_len) * speed);
+
+    for (Pos p: snake.track) {
+        if (p == snake.head) {
+            switch (snake.d) {
+                case up:    mvaddch(p.y, p.x*2, '^'); break;
+                case down:  mvaddch(p.y, p.x*2, 'v'); break;
+                case left:  mvaddch(p.y, p.x*2, '<'); break;
+                case right: mvaddch(p.y, p.x*2, '>'); break;
+            }
+        } else {
+            mvaddch(p.y, p.x*2, '*');
+        }
+    }
+
+    for (Apple a : apples) {
+        Pos p = a.pos;
+        mvaddch(p.y, p.x*2, '@');
+    }
+
+    for (Bomb b : bombs) {
+        Pos p = b.pos;
+        mvaddch(p.y, p.x*2, 'X');
+    }
+
+    refresh();
+}
 
 void threadGetChar() {
     while(isrunning) {
@@ -206,28 +321,39 @@ void threadGetChar() {
 
 int main(int argc, char *argv[]) {
 
+    // initialize parser
     cmdline::parser parser;
     parser.add<int>("length", 'l', "length of the snake", false, 3, cmdline::range(3, 10));
     parser.add<int>("speed", 's', "frame per second, the moving speed", false, 5, cmdline::range(2, 50));
     parser.add("vim", 'v', "vim mode");
+    parser.add("debug", 'd', "debug mode");
 
     parser.add("help", 'h', "print this message");
 
     parser.parse_check(argc, argv);
 
     speed = parser.get<int>("speed");
+    debug_mode = parser.exist("debug");
 
     int interval = 1000 / speed;
     bool isVimMode = parser.exist("vim");
 
-    // winsize w;
-    // ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);  // get the current terminal size
-
     winsize w;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);  // get current windowsize 
 
     LINES = w.ws_row;
     COLS  = w.ws_col;
+
+    if (debug_mode) {
+        logfile.open("./log.log");
+        logfile << LINES << " " << COLS << std::endl;
+    }
+
+    for (int y = 0; y < LINES; ++y) {
+        for (int x = 0; x < COLS/2; ++x) {
+            allPos.emplace_back(x, y);
+        }
+    }
 
 Begin:
 
@@ -242,6 +368,9 @@ Begin:
     
     initscr();
     noecho();  // do not show input chars
+    curs_set(0);  // hide cursor
+    // nodelay(stdscr, true);
+    leaveok(stdscr, true);
 
     clear();
     refresh();
@@ -280,7 +409,7 @@ Begin:
 
     bool res;
     std::thread inputThread(threadGetChar);
-    printscreen(snake, apples, bombs);
+    initscreen(snake, apples, bombs);
 
     int round = 0;
     while (1) {
@@ -309,8 +438,9 @@ Begin:
               (curD == right && snake.d == left))) {
                 snake.d = curD;
         }
-        res = snake.move(apples, bombs);
-        printscreen(snake, apples, bombs);
+        Pos tail;
+        res = snake.move(apples, bombs, tail);
+        updatescreen(snake, apples, bombs, tail);
         
         if (!res) {
 
