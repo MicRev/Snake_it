@@ -10,13 +10,14 @@ A command line Snake game.
   - cmdline (pure headfile ,already included in this repo)
 - build and run with git and gcc
 
-`mkdir snake && cd snake`
-
-`git clone https://github.com/MicRev/Snake_it`
-
-`g++ -pthread -lncurses ./main.cpp -o ./main`
-
-`./main`
+```bash
+mkdir snake && cd snake
+git clone https://github.com/MicRev/Snake_it
+mkdir build && cd build
+cmake ..
+make -j8
+./Snake <Options>
+```
 
 ### Supporting platform
 
