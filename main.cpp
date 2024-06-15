@@ -323,8 +323,8 @@ int main(int argc, char *argv[]) {
 
     // initialize parser
     cmdline::parser parser;
-    parser.add<int>("length", 'l', "length of the snake", false, 3, cmdline::range(3, 10));
-    parser.add<int>("speed", 's', "frame per second, the moving speed", false, 5, cmdline::range(2, 50));
+    parser.add<int>("length", 'l', "length of the snake", false, 5, cmdline::range(3, 10));
+    parser.add<int>("speed", 's', "frame per second, the moving speed", false, 10, cmdline::range(2, 50));
     parser.add("vim", 'v', "vim mode");
     parser.add("debug", 'd', "debug mode");
 
